@@ -26,6 +26,16 @@ void ReportTagMismatch(StackTrace *stack, uptr addr, uptr access_size,
 void ReportInvalidFree(StackTrace *stack, uptr addr);
 void ReportTailOverwritten(StackTrace *stack, uptr addr, uptr orig_size,
                            const u8 *expected);
+void ReportNewDeleteTypeMismatch(uptr addr, uptr delete_size,
+                                 bool has_delete_size, uptr delete_alignment,
+                                 bool has_delete_alignment,
+                                 StackTrace *free_stack);
+void ReportMallocFreeTypeMismatch(uptr addr, uptr delete_size,
+                                  bool has_delete_size, uptr delete_alignment,
+                                  bool has_delete_alignment,
+                                  StackTrace *free_stack);
+void ReportAllocTypeMismatch(uptr addr, StackTrace *free_stack,
+                             AllocType alloc_type, AllocType dealloc_type);
 void ReportRegisters(const uptr *registers_frame, uptr pc);
 void ReportAtExitStatistics();
 

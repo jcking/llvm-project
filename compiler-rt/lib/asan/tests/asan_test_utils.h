@@ -54,6 +54,11 @@
 # define ASAN_THROW(x)
 #endif
 
+#if !defined(__STDC_VERSION_STDLIB_H__) || __STDC_VERSION_STDLIB_H__ < 202311L
+extern "C" void free_sized(void* ptr, size_t size);
+extern "C" void free_aligned_sized(void* ptr, size_t alignment, size_t size);
+#endif
+
 typedef uint8_t   U1;
 typedef uint16_t  U2;
 typedef uint32_t  U4;

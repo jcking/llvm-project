@@ -67,28 +67,18 @@ void ErrorNewDeleteTypeMismatch::Print() {
          scariness.GetDescription(), (void *)addr_description.addr,
          AsanThreadIdAndName(tid).c_str());
   Printf("%s  object passed to delete has wrong type:\n", d.Default());
-  if (delete_size != 0) {
-    Printf(
-        "  size of the allocated type:   %zd bytes;\n"
-        "  size of the deallocated type: %zd bytes.\n",
-        addr_description.chunk_access.chunk_size, delete_size);
+  Printf("  size of the allocated type:   %zd bytes.\n",
+         addr_description.chunk_access.chunk_size);
+  if (has_delete_size) {
+    Printf("  size of the deallocated type: %zd bytes.\n", delete_size);
   }
-  const uptr user_alignment =
-      addr_description.chunk_access.user_requested_alignment;
-  if (delete_alignment != user_alignment) {
-    char user_alignment_str[32];
-    char delete_alignment_str[32];
-    internal_snprintf(user_alignment_str, sizeof(user_alignment_str),
-                      "%zd bytes", user_alignment);
-    internal_snprintf(delete_alignment_str, sizeof(delete_alignment_str),
-                      "%zd bytes", delete_alignment);
-    static const char *kDefaultAlignment = "default-aligned";
-    Printf(
-        "  alignment of the allocated type:   %s;\n"
-        "  alignment of the deallocated type: %s.\n",
-        user_alignment > 0 ? user_alignment_str : kDefaultAlignment,
-        delete_alignment > 0 ? delete_alignment_str : kDefaultAlignment);
+  uptr user_alignment = addr_description.chunk_access.user_requested_alignment;
+  if (user_alignment <= 0) {
+    user_alignment = ASAN_SHADOW_GRANULARITY;
   }
+  Printf("  alignment of the allocated type:   %zd bytes.\n", user_alignment);
+  Printf("  alignment of the deallocated type: %zd bytes.\n",
+         has_delete_alignment ? delete_alignment : ASAN_SHADOW_GRANULARITY);
   CHECK_GT(free_stack->size, 0);
   scariness.Print();
   GET_STACK_TRACE_FATAL(free_stack->trace[0], free_stack->top_frame_bp);
@@ -98,6 +88,36 @@ void ErrorNewDeleteTypeMismatch::Print() {
   Report(
       "HINT: if you don't care about these errors you may set "
       "ASAN_OPTIONS=new_delete_type_mismatch=0\n");
+}
+
+void ErrorMallocFreeTypeMismatch::Print() {
+  Decorator d;
+  Printf("%s", d.Error());
+  Report("ERROR: AddressSanitizer: %s on %p in thread %s:\n",
+         scariness.GetDescription(), (void *)addr_description.addr,
+         AsanThreadIdAndName(tid).c_str());
+  Printf("%s  object passed to free has wrong type:\n", d.Default());
+  Printf("  size of the allocated type:   %zd bytes.\n",
+         addr_description.chunk_access.chunk_size);
+  if (has_delete_size) {
+    Printf("  size of the deallocated type: %zd bytes.\n", delete_size);
+  }
+  uptr user_alignment = addr_description.chunk_access.user_requested_alignment;
+  if (user_alignment <= 0) {
+    user_alignment = ASAN_SHADOW_GRANULARITY;
+  }
+  Printf("  alignment of the allocated type:   %zd bytes.\n", user_alignment);
+  Printf("  alignment of the deallocated type: %zd bytes.\n",
+         has_delete_alignment ? delete_alignment : ASAN_SHADOW_GRANULARITY);
+  CHECK_GT(free_stack->size, 0);
+  scariness.Print();
+  GET_STACK_TRACE_FATAL(free_stack->trace[0], free_stack->top_frame_bp);
+  stack.Print();
+  addr_description.Print();
+  ReportErrorSummary(scariness.GetDescription(), &stack);
+  Report(
+      "HINT: if you don't care about these errors you may set "
+      "ASAN_OPTIONS=malloc_free_type_mismatch=0\n");
 }
 
 void ErrorFreeNotMalloced::Print() {
@@ -117,10 +137,11 @@ void ErrorFreeNotMalloced::Print() {
 }
 
 void ErrorAllocTypeMismatch::Print() {
-  static const char *alloc_names[] = {"INVALID", "malloc", "operator new",
-                                      "operator new []"};
-  static const char *dealloc_names[] = {"INVALID", "free", "operator delete",
-                                        "operator delete []"};
+  static const char *alloc_names[] = {"malloc", "operator new",
+                                      "operator new []", "aligned_alloc"};
+  static const char *dealloc_names[] = {"free/free_sized", "operator delete",
+                                        "operator delete []",
+                                        "free_aligned_sized"};
   CHECK_NE(alloc_type, dealloc_type);
   Decorator d;
   Printf("%s", d.Error());

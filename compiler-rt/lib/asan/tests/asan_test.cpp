@@ -415,6 +415,72 @@ TEST(AddressSanitizer, ReallocInvalidPointerTest) {
   free(ptr);
 }
 
+TEST(AddressSanitizer, AllocTypeMismatch) {
+  void *ptr;
+
+  // malloc+free_aligned_size
+  ptr = Ident(malloc(42));
+  ASSERT_TRUE(NULL != ptr);
+  EXPECT_DEATH(free_aligned_sized(ptr, alignof(std::max_align_t), 42),
+               "alloc-dealloc-mismatch \\(malloc vs free_aligned_sized\\)");
+  free(ptr);
+
+#if SANITIZER_TEST_HAS_ALIGNED_ALLOC
+  // aligned_alloc+free_sized
+  ptr = aligned_alloc(alignof(std::max_align_t) * 2,
+                      alignof(std::max_align_t) * 4);
+  ASSERT_TRUE(NULL != ptr);
+  EXPECT_DEATH(free_sized(ptr, alignof(std::max_align_t) * 4),
+               "alloc-dealloc-mismatch \\(aligned_alloc vs free/free_sized\\)");
+  free(ptr);
+#endif
+}
+
+TEST(AddressSanitizer, MallocFreeTypeMismatch) {
+  void *ptr;
+
+  // malloc+free_aligned_size
+  ptr = Ident(malloc(42));
+  ASSERT_TRUE(NULL != ptr);
+  EXPECT_DEATH(free_sized(ptr, 41), "object passed to free has wrong type");
+  EXPECT_DEATH(free_sized(ptr, 43), "object passed to free has wrong type");
+  free(ptr);
+
+#if SANITIZER_TEST_HAS_ALIGNED_ALLOC
+  // aligned_alloc+free_sized
+  ptr = aligned_alloc(alignof(std::max_align_t) * 4,
+                      alignof(std::max_align_t) * 8);
+  ASSERT_TRUE(NULL != ptr);
+  EXPECT_DEATH(free_aligned_sized(ptr, alignof(std::max_align_t) * 4,
+                                  alignof(std::max_align_t) * 8 - 1),
+               "object passed to free has wrong type");
+  EXPECT_DEATH(free_aligned_sized(ptr, alignof(std::max_align_t) * 4,
+                                  alignof(std::max_align_t) * 8 + 1),
+               "object passed to free has wrong type");
+  EXPECT_DEATH(free_aligned_sized(ptr, alignof(std::max_align_t) * 2,
+                                  alignof(std::max_align_t) * 8),
+               "object passed to free has wrong type");
+  EXPECT_DEATH(free_aligned_sized(ptr, alignof(std::max_align_t) * 8,
+                                  alignof(std::max_align_t) * 8),
+               "object passed to free has wrong type");
+  free(ptr);
+#endif
+}
+
+TEST(AddressSanitizer, FreeSizedNull) {
+  free_sized(nullptr, 0);
+  free_sized(nullptr, 1);
+  free_sized(nullptr, 2);
+}
+
+TEST(AddressSanitizer, FreeAlignedSizedNull) {
+  for (size_t alignment = 0; alignment < 4; ++alignment) {
+    for (size_t size = 0; size < 3; ++size) {
+      free_aligned_sized(nullptr, alignment, size);
+    }
+  }
+}
+
 TEST(AddressSanitizer, ZeroSizeMallocTest) {
   // Test that malloc(0) and similar functions don't return NULL.
   void *ptr = Ident(malloc(0));

@@ -1073,6 +1073,181 @@ TagMismatchReport::~TagMismatchReport() {
   MaybePrintAndroidHelpUrl();
   ReportErrorSummary(bug_type, stack);
 }
+
+class AllocTypeMismatchReport : public BaseReport {
+ public:
+  explicit AllocTypeMismatchReport(uptr tagged_addr, StackTrace *free_stack,
+                                   AllocType alloc_type, AllocType dealloc_type)
+      : BaseReport(free_stack, flags()->halt_on_error, tagged_addr, 0),
+        alloc_type(alloc_type),
+        dealloc_type(dealloc_type) {}
+
+  ~AllocTypeMismatchReport() {
+    static const char *alloc_names[] = {"malloc", "operator new",
+                                        "operator new []", "aligned_alloc"};
+    static const char *dealloc_names[] = {"free/free_sized", "operator delete",
+                                          "operator delete []",
+                                          "free_aligned_sized"};
+    Decorator d;
+    Printf("%s", d.Error());
+    uptr pc = GetTopPc(stack);
+    const char *bug_type = "alloc-type-mismatch";
+    const Thread *thread = GetCurrentThread();
+    if (thread) {
+      Report("ERROR: %s: %s (%s vs %s) on address %p at pc %p on thread T%zd\n",
+             SanitizerToolName, bug_type, alloc_names[alloc_type],
+             dealloc_names[alloc_type], untagged_addr, pc, thread->unique_id());
+    } else {
+      Report(
+          "ERROR: %s: %s (%s vs %s) on address %p at pc %p on unknown thread\n",
+          SanitizerToolName, bug_type, alloc_names[alloc_type],
+          dealloc_names[alloc_type], untagged_addr, pc);
+    }
+    Printf("%s", d.Access());
+    if (shadow.addr) {
+      Printf("tags: %02x/%02x (ptr/mem)\n", ptr_tag,
+             GetTagCopy(MemToShadow(untagged_addr)));
+    }
+    Printf("%s", d.Default());
+
+    stack->Print();
+
+    PrintAddressDescription();
+    PrintTags(untagged_addr);
+    MaybePrintAndroidHelpUrl();
+    ReportErrorSummary(bug_type, stack);
+  }
+
+ private:
+  const AllocType alloc_type;
+  const AllocType dealloc_type;
+};
+
+class NewDeleteTypeMismatchReport : public BaseReport {
+ public:
+  NewDeleteTypeMismatchReport(uptr tagged_addr, uptr delete_size,
+                              bool has_delete_size, uptr delete_alignment,
+                              bool has_delete_alignment, StackTrace *free_stack)
+      : BaseReport(free_stack, flags()->halt_on_error, tagged_addr, 0),
+        delete_size(delete_size),
+        has_delete_size(has_delete_size),
+        delete_alignment(delete_alignment),
+        has_delete_alignment(has_delete_alignment) {}
+
+  ~NewDeleteTypeMismatchReport() {
+    Decorator d;
+    Printf("%s", d.Error());
+    uptr pc = GetTopPc(stack);
+    const char *bug_type = "new-delete-type-mismatch";
+    const Thread *thread = GetCurrentThread();
+    if (thread) {
+      Report("ERROR: %s: %s on address %p at pc %p on thread T%zd\n",
+             SanitizerToolName, bug_type, untagged_addr, pc,
+             thread->unique_id());
+    } else {
+      Report("ERROR: %s: %s on address %p at pc %p on unknown thread\n",
+             SanitizerToolName, bug_type, untagged_addr, pc);
+    }
+    HwasanChunkView chunk = FindHeapChunkByAddress(untagged_addr);
+    Printf("%s  object passed to free has wrong type:\n", d.Default());
+    Printf("  size of the allocated type:   %zd bytes.\n", chunk.UsedSize());
+    if (has_delete_size) {
+      Printf("  size of the deallocated type: %zd bytes.\n", delete_size);
+    }
+    uptr user_alignment = chunk.GetRequestedAlignment();
+    if (user_alignment <= 0) {
+      user_alignment = kShadowAlignment;
+    }
+    Printf("  alignment of the allocated type:   %zd bytes.\n", user_alignment);
+    if (has_delete_alignment) {
+      Printf("  alignment of the deallocated type: %zd bytes.\n",
+             delete_alignment);
+    }
+    Printf("%s", d.Access());
+    if (shadow.addr) {
+      Printf("tags: %02x/%02x (ptr/mem)\n", ptr_tag,
+             GetTagCopy(MemToShadow(untagged_addr)));
+    }
+    Printf("%s", d.Default());
+
+    stack->Print();
+
+    PrintAddressDescription();
+    PrintTags(untagged_addr);
+    MaybePrintAndroidHelpUrl();
+    ReportErrorSummary(bug_type, stack);
+  }
+
+ private:
+  const uptr delete_size;
+  const bool has_delete_size;
+  const uptr delete_alignment;
+  const bool has_delete_alignment;
+};
+
+class MallocFreeTypeMismatchReport : public BaseReport {
+ public:
+  MallocFreeTypeMismatchReport(uptr tagged_addr, uptr delete_size,
+                               bool has_delete_size, uptr delete_alignment,
+                               bool has_delete_alignment,
+                               StackTrace *free_stack)
+      : BaseReport(free_stack, flags()->halt_on_error, tagged_addr, 0),
+        delete_size(delete_size),
+        has_delete_size(has_delete_size),
+        delete_alignment(delete_alignment),
+        has_delete_alignment(has_delete_alignment) {}
+
+  ~MallocFreeTypeMismatchReport() {
+    Decorator d;
+    Printf("%s", d.Error());
+    uptr pc = GetTopPc(stack);
+    const char *bug_type = "malloc-free-type-mismatch";
+    const Thread *thread = GetCurrentThread();
+    if (thread) {
+      Report("ERROR: %s: %s on address %p at pc %p on thread T%zd\n",
+             SanitizerToolName, bug_type, untagged_addr, pc,
+             thread->unique_id());
+    } else {
+      Report("ERROR: %s: %s on address %p at pc %p on unknown thread\n",
+             SanitizerToolName, bug_type, untagged_addr, pc);
+    }
+    HwasanChunkView chunk = FindHeapChunkByAddress(untagged_addr);
+    Printf("%s  object passed to free has wrong type:\n", d.Default());
+    Printf("  size of the allocated type:   %zd bytes.\n", chunk.UsedSize());
+    if (has_delete_size) {
+      Printf("  size of the deallocated type: %zd bytes.\n", delete_size);
+    }
+    uptr user_alignment = chunk.GetRequestedAlignment();
+    if (user_alignment <= 0) {
+      user_alignment = kShadowAlignment;
+    }
+    Printf("  alignment of the allocated type:   %zd bytes.\n", user_alignment);
+    if (has_delete_alignment) {
+      Printf("  alignment of the deallocated type: %zd bytes.\n",
+             delete_alignment);
+    }
+    Printf("%s", d.Access());
+    if (shadow.addr) {
+      Printf("tags: %02x/%02x (ptr/mem)\n", ptr_tag,
+             GetTagCopy(MemToShadow(untagged_addr)));
+    }
+    Printf("%s", d.Default());
+
+    stack->Print();
+
+    PrintAddressDescription();
+    PrintTags(untagged_addr);
+    MaybePrintAndroidHelpUrl();
+    ReportErrorSummary(bug_type, stack);
+  }
+
+ private:
+  const uptr delete_size;
+  const bool has_delete_size;
+  const uptr delete_alignment;
+  const bool has_delete_alignment;
+};
+
 }  // namespace
 
 void ReportInvalidFree(StackTrace *stack, uptr tagged_addr) {
@@ -1082,6 +1257,29 @@ void ReportInvalidFree(StackTrace *stack, uptr tagged_addr) {
 void ReportTailOverwritten(StackTrace *stack, uptr tagged_addr, uptr orig_size,
                            const u8 *expected) {
   TailOverwrittenReport R(stack, tagged_addr, orig_size, expected);
+}
+
+void ReportNewDeleteTypeMismatch(uptr addr, uptr delete_size,
+                                 bool has_delete_size, uptr delete_alignment,
+                                 bool has_delete_alignment,
+                                 StackTrace *free_stack) {
+  NewDeleteTypeMismatchReport R(addr, delete_size, has_delete_size,
+                                delete_alignment, has_delete_alignment,
+                                free_stack);
+}
+
+void ReportMallocFreeTypeMismatch(uptr addr, uptr delete_size,
+                                  bool has_delete_size, uptr delete_alignment,
+                                  bool has_delete_alignment,
+                                  StackTrace *free_stack) {
+  MallocFreeTypeMismatchReport R(addr, delete_size, has_delete_size,
+                                 delete_alignment, has_delete_alignment,
+                                 free_stack);
+}
+
+void ReportAllocTypeMismatch(uptr addr, StackTrace *free_stack,
+                             AllocType alloc_type, AllocType dealloc_type) {
+  AllocTypeMismatchReport R(addr, free_stack, alloc_type, dealloc_type);
 }
 
 void ReportTagMismatch(StackTrace *stack, uptr tagged_addr, uptr access_size,

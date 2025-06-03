@@ -31,7 +31,7 @@ using namespace __asan;
 #  define COMMON_MALLOC_FORCE_UNLOCK() asan_mz_force_unlock()
 #  define COMMON_MALLOC_MEMALIGN(alignment, size) \
     GET_STACK_TRACE_MALLOC;                       \
-    void *p = asan_memalign(alignment, size, &stack, FROM_MALLOC)
+    void *p = asan_memalign(alignment, size, &stack)
 #  define COMMON_MALLOC_MALLOC(size) \
     GET_STACK_TRACE_MALLOC;          \
     void *p = asan_malloc(size, &stack)
@@ -46,10 +46,16 @@ using namespace __asan;
     int res = asan_posix_memalign(memptr, alignment, size, &stack);
 #  define COMMON_MALLOC_VALLOC(size) \
     GET_STACK_TRACE_MALLOC;          \
-    void *p = asan_memalign(GetPageSizeCached(), size, &stack, FROM_MALLOC);
+    void *p = asan_memalign(GetPageSizeCached(), size, &stack);
 #  define COMMON_MALLOC_FREE(ptr) \
     GET_STACK_TRACE_FREE;         \
-    asan_free(ptr, &stack, FROM_MALLOC);
+    asan_free(ptr, &stack);
+#  define COMMON_MALLOC_FREE_SIZED(ptr, size) \
+    GET_STACK_TRACE_FREE;                     \
+    asan_free_sized(ptr, size, &stack);
+#  define COMMON_MALLOC_FREE_ALIGNED_SIZED(ptr, alignment, size) \
+    GET_STACK_TRACE_FREE;                                        \
+    asan_free_aligned_sized(ptr, alignment, size, &stack);
 #  define COMMON_MALLOC_SIZE(ptr) uptr size = asan_mz_size(ptr);
 #  define COMMON_MALLOC_FILL_STATS(zone, stats)                    \
     AsanMallocStats malloc_stats;                                  \
@@ -59,6 +65,9 @@ using namespace __asan;
 #  define COMMON_MALLOC_REPORT_UNKNOWN_REALLOC(ptr, zone_ptr, zone_name) \
     GET_STACK_TRACE_FREE;                                                \
     ReportMacMzReallocUnknown((uptr)ptr, (uptr)zone_ptr, zone_name, &stack);
+#  define COMMON_MALLOC_ALIGNED_ALLOC(alignment, size) \
+    GET_STACK_TRACE_MALLOC;                            \
+    void *p = asan_aligned_alloc(alignment, size, &stack);
 #  define COMMON_MALLOC_NAMESPACE __asan
 #  define COMMON_MALLOC_HAS_ZONE_ENUMERATOR 0
 #  define COMMON_MALLOC_HAS_EXTRA_INTROSPECTION_INIT 1

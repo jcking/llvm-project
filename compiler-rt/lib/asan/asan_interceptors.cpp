@@ -87,15 +87,17 @@ using namespace __asan;
 
 DECLARE_REAL_AND_INTERCEPTOR(void *, malloc, usize)
 DECLARE_REAL_AND_INTERCEPTOR(void, free, void *)
+DECLARE_REAL_AND_INTERCEPTOR(void, free_sized, void *, usize)
+DECLARE_REAL_AND_INTERCEPTOR(void, free_aligned_sized, void *, usize, usize)
 
-#define COMMON_INTERCEPT_FUNCTION_VER(name, ver) \
-  ASAN_INTERCEPT_FUNC_VER(name, ver)
-#define COMMON_INTERCEPT_FUNCTION_VER_UNVERSIONED_FALLBACK(name, ver) \
-  ASAN_INTERCEPT_FUNC_VER_UNVERSIONED_FALLBACK(name, ver)
-#define COMMON_INTERCEPTOR_WRITE_RANGE(ctx, ptr, size) \
-  ASAN_WRITE_RANGE(ctx, ptr, size)
-#define COMMON_INTERCEPTOR_READ_RANGE(ctx, ptr, size) \
-  ASAN_READ_RANGE(ctx, ptr, size)
+#  define COMMON_INTERCEPT_FUNCTION_VER(name, ver) \
+    ASAN_INTERCEPT_FUNC_VER(name, ver)
+#  define COMMON_INTERCEPT_FUNCTION_VER_UNVERSIONED_FALLBACK(name, ver) \
+    ASAN_INTERCEPT_FUNC_VER_UNVERSIONED_FALLBACK(name, ver)
+#  define COMMON_INTERCEPTOR_WRITE_RANGE(ctx, ptr, size) \
+    ASAN_WRITE_RANGE(ctx, ptr, size)
+#  define COMMON_INTERCEPTOR_READ_RANGE(ctx, ptr, size) \
+    ASAN_READ_RANGE(ctx, ptr, size)
 #  define COMMON_INTERCEPTOR_ENTER(ctx, func, ...) \
     ASAN_INTERCEPTOR_ENTER(ctx, func);             \
     do {                                           \

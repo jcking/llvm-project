@@ -1,9 +1,9 @@
 // RUN: %clangxx_asan -fno-sized-deallocation -fsanitize-recover=address -O0 %s -o %t
-// RUN: %env_asan_opts=new_delete_type_mismatch=1:halt_on_error=false:detect_leaks=false %run %t 2>&1 | FileCheck %s
+// RUN: %env_asan_opts=new_delete_type_mismatch=1:halt_on_error=false:detect_leaks=false %run %t 2>&1 | FileCheck --dump-input=always %s
 // RUN: %env_asan_opts=new_delete_type_mismatch=0                                        %run %t
 
 // RUN: %clangxx_asan -fsized-deallocation -fsanitize-recover=address -O0 %s -o %t
-// RUN: %env_asan_opts=new_delete_type_mismatch=1:halt_on_error=false:detect_leaks=false %run %t 2>&1 | FileCheck %s
+// RUN: %env_asan_opts=new_delete_type_mismatch=1:halt_on_error=false:detect_leaks=false %run %t 2>&1 | FileCheck --dump-input=always %s
 // RUN: %env_asan_opts=new_delete_type_mismatch=0                                        %run %t
 
 #include <stdio.h>
@@ -61,29 +61,29 @@ int main(int argc, char **argv) {
   operator delete(break_optimization(new S12_128), std::nothrow);
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   128 bytes;
-  // CHECK:  alignment of the deallocated type: default-aligned.
+  // CHECK:  alignment of the allocated type:   128 bytes.
+  // CHECK:  alignment of the deallocated type: {{[0-9]+}} bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
 
   operator delete(break_optimization(new S12_128), sizeof(S12_128));
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   128 bytes;
-  // CHECK:  alignment of the deallocated type: default-aligned.
+  // CHECK:  alignment of the allocated type:   128 bytes.
+  // CHECK:  alignment of the deallocated type: {{[0-9]+}} bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
 
   operator delete[](break_optimization(new S12_128[100]), std::nothrow);
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   128 bytes;
-  // CHECK:  alignment of the deallocated type: default-aligned.
+  // CHECK:  alignment of the allocated type:   128 bytes.
+  // CHECK:  alignment of the deallocated type: {{[0-9]+}} bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
 
   operator delete[](break_optimization(new S12_128[100]), sizeof(S12_128[100]));
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   128 bytes;
-  // CHECK:  alignment of the deallocated type: default-aligned.
+  // CHECK:  alignment of the allocated type:   128 bytes.
+  // CHECK:  alignment of the deallocated type: {{[0-9]+}} bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
 
   // Various mismatched alignments.
@@ -91,50 +91,42 @@ int main(int argc, char **argv) {
   delete break_optimization(reinterpret_cast<S12*>(new S12_256));
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   256 bytes;
-  // CHECK:  alignment of the deallocated type: default-aligned.
+  // CHECK:  alignment of the allocated type:   256 bytes.
+  // CHECK:  alignment of the deallocated type: {{[0-9]+}} bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
 
   delete break_optimization(reinterpret_cast<S12_256*>(new S12));
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   default-aligned;
+  // CHECK:  alignment of the allocated type:   {{[0-9]+}} bytes.
   // CHECK:  alignment of the deallocated type: 256 bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
 
   delete break_optimization(reinterpret_cast<S12_128*>(new S12_256));
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   256 bytes;
+  // CHECK:  alignment of the allocated type:   256 bytes.
   // CHECK:  alignment of the deallocated type: 128 bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
 
   delete [] break_optimization(reinterpret_cast<S12*>(new S12_256[100]));
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   256 bytes;
-  // CHECK:  alignment of the deallocated type: default-aligned.
+  // CHECK:  alignment of the allocated type:   256 bytes.
+  // CHECK:  alignment of the deallocated type: {{[0-9]+}} bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
 
   delete [] break_optimization(reinterpret_cast<S12_256*>(new S12[100]));
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   default-aligned;
+  // CHECK:  alignment of the allocated type:   {{[0-9]+}} bytes.
   // CHECK:  alignment of the deallocated type: 256 bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
 
   delete [] break_optimization(reinterpret_cast<S12_128*>(new S12_256[100]));
   // CHECK: AddressSanitizer: new-delete-type-mismatch
   // CHECK:  object passed to delete has wrong type:
-  // CHECK:  alignment of the allocated type:   256 bytes;
+  // CHECK:  alignment of the allocated type:   256 bytes.
   // CHECK:  alignment of the deallocated type: 128 bytes.
   // CHECK: SUMMARY: AddressSanitizer: new-delete-type-mismatch
-
-  // Push ASan limits, the current limitation is that it cannot differentiate
-  // alignments above 512 bytes.
-  fprintf(stderr, "Checking alignments >= 512 bytes\n");
-  delete break_optimization(reinterpret_cast<S1024_512*>(new S1024_1024));
-  fprintf(stderr, "Done\n");
-  // CHECK: Checking alignments >= 512 bytes
-  // CHECK-NEXT: Done
 }

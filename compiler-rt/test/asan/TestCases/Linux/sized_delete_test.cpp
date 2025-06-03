@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
     Del12(reinterpret_cast<S12*>(new S20));
     // SCALAR: AddressSanitizer: new-delete-type-mismatch
     // SCALAR:  object passed to delete has wrong type:
-    // SCALAR:  size of the allocated type:   20 bytes;
+    // SCALAR:  size of the allocated type:   20 bytes.
     // SCALAR:  size of the deallocated type: 12 bytes.
     // SCALAR: is located 0 bytes inside of 20-byte region
     // SCALAR: SUMMARY: AddressSanitizer: new-delete-type-mismatch
@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
     // ARRAY-NOT: D2::~D2
     // ARRAY: D1::~D1
     // ARRAY: AddressSanitizer: new-delete-type-mismatch
-    // ARRAY:  size of the allocated type:   20{{4|8}} bytes;
+    // ARRAY:  size of the allocated type:   20{{4|8}} bytes.
     // ARRAY:  size of the deallocated type: 12{{4|8}} bytes.
   }
 }

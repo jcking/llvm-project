@@ -51,8 +51,13 @@ void ReportGenericError(uptr pc, uptr bp, uptr sp, uptr addr, bool is_write,
                         uptr access_size, u32 exp, bool fatal);
 void ReportDeadlySignal(const SignalContext &sig);
 void ReportNewDeleteTypeMismatch(uptr addr, uptr delete_size,
-                                 uptr delete_alignment,
+                                 bool has_delete_size, uptr delete_alignment,
+                                 bool has_delete_alignment,
                                  BufferedStackTrace *free_stack);
+void ReportMallocFreeTypeMismatch(uptr addr, uptr delete_size,
+                                  bool has_delete_size, uptr delete_alignment,
+                                  bool has_delete_alignment,
+                                  BufferedStackTrace *free_stack);
 void ReportDoubleFree(uptr addr, BufferedStackTrace *free_stack);
 void ReportFreeNotMalloced(uptr addr, BufferedStackTrace *free_stack);
 void ReportAllocTypeMismatch(uptr addr, BufferedStackTrace *free_stack,

@@ -92,6 +92,9 @@ void *SANITIZER_CDECL __sanitizer___libc_memalign(size_t alignment,
 void *SANITIZER_CDECL __sanitizer_valloc(size_t size);
 void *SANITIZER_CDECL __sanitizer_pvalloc(size_t size);
 void SANITIZER_CDECL __sanitizer_free(void *ptr);
+void SANITIZER_CDECL __sanitizer_free_sized(void *ptr, size_t size);
+void SANITIZER_CDECL __sanitizer_free_aligned_sized(void *ptr, size_t alignment,
+                                                    size_t size);
 void SANITIZER_CDECL __sanitizer_cfree(void *ptr);
 size_t SANITIZER_CDECL __sanitizer_malloc_usable_size(const void *ptr);
 struct mallinfo SANITIZER_CDECL __sanitizer_mallinfo();

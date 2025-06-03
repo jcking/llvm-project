@@ -255,11 +255,24 @@ void ReportDoubleFree(uptr addr, BufferedStackTrace *free_stack) {
 }
 
 void ReportNewDeleteTypeMismatch(uptr addr, uptr delete_size,
-                                 uptr delete_alignment,
+                                 bool has_delete_size, uptr delete_alignment,
+                                 bool has_delete_alignment,
                                  BufferedStackTrace *free_stack) {
   ScopedInErrorReport in_report;
   ErrorNewDeleteTypeMismatch error(GetCurrentTidOrInvalid(), free_stack, addr,
-                                   delete_size, delete_alignment);
+                                   delete_size, has_delete_size,
+                                   delete_alignment, has_delete_alignment);
+  in_report.ReportError(error);
+}
+
+void ReportMallocFreeTypeMismatch(uptr addr, uptr delete_size,
+                                  bool has_delete_size, uptr delete_alignment,
+                                  bool has_delete_alignment,
+                                  BufferedStackTrace *free_stack) {
+  ScopedInErrorReport in_report;
+  ErrorMallocFreeTypeMismatch error(GetCurrentTidOrInvalid(), free_stack, addr,
+                                    delete_size, has_delete_size,
+                                    delete_alignment, has_delete_alignment);
   in_report.ReportError(error);
 }
 

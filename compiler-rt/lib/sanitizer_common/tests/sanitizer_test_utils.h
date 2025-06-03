@@ -133,4 +133,10 @@ static inline uint32_t my_rand() {
 # define SANITIZER_TEST_HAS_STRNDUP 0
 #endif
 
+#if !defined(_WIN32) && !defined(__APPLE__)
+#  define SANITIZER_TEST_HAS_ALIGNED_ALLOC 1
+#else
+#  define SANITIZER_TEST_HAS_ALIGNED_ALLOC 0
+#endif
+
 #endif  // SANITIZER_TEST_UTILS_H

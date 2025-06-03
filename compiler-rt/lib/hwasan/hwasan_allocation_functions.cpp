@@ -87,6 +87,26 @@ void __sanitizer_free(void *ptr) {
 }
 
 SANITIZER_INTERFACE_ATTRIBUTE
+void __sanitizer_free_sized(void *ptr, uptr size) {
+  if (!ptr)
+    return;
+  if (DlsymAlloc::PointerIsMine(ptr))
+    return DlsymAlloc::Free(ptr);
+  GET_MALLOC_STACK_TRACE;
+  hwasan_free_sized(ptr, size, &stack);
+}
+
+SANITIZER_INTERFACE_ATTRIBUTE
+void __sanitizer_free_aligned_sized(void *ptr, uptr alignment, uptr size) {
+  if (!ptr)
+    return;
+  if (DlsymAlloc::PointerIsMine(ptr))
+    return DlsymAlloc::Free(ptr);
+  GET_MALLOC_STACK_TRACE;
+  hwasan_free_aligned_sized(ptr, alignment, size, &stack);
+}
+
+SANITIZER_INTERFACE_ATTRIBUTE
 void __sanitizer_cfree(void *ptr) {
   if (!ptr)
     return;
@@ -170,6 +190,9 @@ INTERCEPTOR_ALIAS(void *, aligned_alloc, SIZE_T alignment, SIZE_T size);
 INTERCEPTOR_ALIAS(void *, __libc_memalign, SIZE_T alignment, SIZE_T size);
 INTERCEPTOR_ALIAS(void *, valloc, SIZE_T size);
 INTERCEPTOR_ALIAS(void, free, void *ptr);
+INTERCEPTOR_ALIAS(void, free_sized, void *ptr, SIZE_T size);
+INTERCEPTOR_ALIAS(void, free_aligned_sized, void *ptr, SIZE_T alignment,
+                  SIZE_T size);
 INTERCEPTOR_ALIAS(uptr, malloc_usable_size, const void *ptr);
 INTERCEPTOR_ALIAS(void *, calloc, SIZE_T nmemb, SIZE_T size);
 INTERCEPTOR_ALIAS(void *, realloc, void *ptr, SIZE_T size);

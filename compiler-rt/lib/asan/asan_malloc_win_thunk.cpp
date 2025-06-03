@@ -25,6 +25,8 @@
 extern "C" {
 __declspec(dllimport) size_t __cdecl __asan_msize(void *ptr);
 __declspec(dllimport) void __cdecl __asan_free(void *const ptr);
+__declspec(dllimport) void __cdecl __asan_free_sized(void *const ptr,
+                                                     const size_t size);
 __declspec(dllimport) void *__cdecl __asan_malloc(const size_t size);
 __declspec(dllimport) void *__cdecl __asan_calloc(const size_t nmemb,
                                                   const size_t size);
@@ -57,6 +59,21 @@ STATIC_MALLOC_INTERFACE void _free_base(void *const ptr) {
 
 STATIC_MALLOC_INTERFACE void _free_dbg(void *const ptr) {
   return __asan_free(ptr);
+}
+
+// free_sized
+STATIC_MALLOC_INTERFACE void free_sized(void *const ptr, const size_t size) {
+  return __asan_free_sized(ptr, size);
+}
+
+STATIC_MALLOC_INTERFACE void _free_sized_base(void *const ptr,
+                                              const size_t size) {
+  return __asan_free_sized(ptr, size);
+}
+
+STATIC_MALLOC_INTERFACE void _free_sized_dbg(void *const ptr,
+                                             const size_t size) {
+  return __asan_free_sized(ptr, size);
 }
 
 // malloc

@@ -11,17 +11,18 @@
 // HWAddressSanitizer allocator.
 //===----------------------------------------------------------------------===//
 
+#include "hwasan_allocator.h"
+
+#include "hwasan.h"
+#include "hwasan_checks.h"
+#include "hwasan_malloc_bisect.h"
+#include "hwasan_mapping.h"
+#include "hwasan_report.h"
+#include "hwasan_thread.h"
+#include "lsan/lsan_common.h"
 #include "sanitizer_common/sanitizer_atomic.h"
 #include "sanitizer_common/sanitizer_errno.h"
 #include "sanitizer_common/sanitizer_stackdepot.h"
-#include "hwasan.h"
-#include "hwasan_allocator.h"
-#include "hwasan_checks.h"
-#include "hwasan_mapping.h"
-#include "hwasan_malloc_bisect.h"
-#include "hwasan_thread.h"
-#include "hwasan_report.h"
-#include "lsan/lsan_common.h"
 
 namespace __hwasan {
 
@@ -42,6 +43,23 @@ enum {
   CHUNK_ALLOCATED = 1,
 };
 
+static uptr ShadowAlignmentLog() { return Log2(kShadowAlignment); }
+
+static uptr ComputeRequestedAlignmentLog(uptr requested_alignment) {
+  if (requested_alignment < kShadowAlignment) {
+    return 0;
+  }
+  return Min(Log2(requested_alignment),
+             ((uptr{1} << 4) - 1) + ShadowAlignmentLog()) -
+         ShadowAlignmentLog() - 1;
+}
+
+static uptr ComputeRequestedAlignment(uptr requested_alignment_log) {
+  if (requested_alignment_log == 0) {
+    return 0;
+  }
+  return uptr{1} << (requested_alignment_log + ShadowAlignmentLog() - 1);
+}
 
 // Initialized in HwasanAllocatorInit, an never changed.
 alignas(16) static u8 tail_magic[kShadowAlignment - 1];
@@ -51,15 +69,9 @@ bool HwasanChunkView::IsAllocated() const {
   return metadata_ && metadata_->IsAllocated();
 }
 
-uptr HwasanChunkView::Beg() const {
-  return block_;
-}
-uptr HwasanChunkView::End() const {
-  return Beg() + UsedSize();
-}
-uptr HwasanChunkView::UsedSize() const {
-  return metadata_->GetRequestedSize();
-}
+uptr HwasanChunkView::Beg() const { return block_; }
+uptr HwasanChunkView::End() const { return Beg() + UsedSize(); }
+uptr HwasanChunkView::UsedSize() const { return metadata_->GetRequestedSize(); }
 u32 HwasanChunkView::GetAllocStackId() const {
   return metadata_->GetAllocStackId();
 }
@@ -78,6 +90,18 @@ bool HwasanChunkView::FromSmallHeap() const {
 
 bool HwasanChunkView::AddrIsInside(uptr addr) const {
   return (addr >= Beg()) && (addr < Beg() + UsedSize());
+}
+
+AllocType HwasanChunkView::GetAllocType() const {
+  return metadata_->GetAllocType();
+}
+
+u8 HwasanChunkView::GetRequestedAlignmentLog() const {
+  return metadata_->GetRequestedAlignmentLog();
+}
+
+uptr HwasanChunkView::GetRequestedAlignment() const {
+  return ComputeRequestedAlignment(GetRequestedAlignmentLog());
 }
 
 inline void Metadata::SetAllocated(u32 stack, u64 size) {
@@ -116,13 +140,23 @@ inline u32 Metadata::GetAllocThreadId() const {
   return tid;
 }
 
-void GetAllocatorStats(AllocatorStatCounters s) {
-  allocator.GetStats(s);
+inline void Metadata::SetAllocType(AllocType type) { alloc_type = type; }
+
+inline AllocType Metadata::GetAllocType() const {
+  return static_cast<AllocType>(alloc_type);
 }
 
-inline void Metadata::SetLsanTag(__lsan::ChunkTag tag) {
-  lsan_tag = tag;
+inline void Metadata::SetRequestedAlignmentLog(u8 alignment_log) {
+  requested_alignment_log = alignment_log;
 }
+
+inline u8 Metadata::GetRequestedAlignmentLog() const {
+  return requested_alignment_log;
+}
+
+void GetAllocatorStats(AllocatorStatCounters s) { allocator.GetStats(s); }
+
+inline void Metadata::SetLsanTag(__lsan::ChunkTag tag) { lsan_tag = tag; }
 
 inline __lsan::ChunkTag Metadata::GetLsanTag() const {
   return static_cast<__lsan::ChunkTag>(lsan_tag);
@@ -174,13 +208,15 @@ void AllocatorThreadFinish(AllocatorCache *cache) {
 }
 
 static uptr TaggedSize(uptr size) {
-  if (!size) size = 1;
+  if (!size)
+    size = 1;
   uptr new_size = RoundUpTo(size, kShadowAlignment);
   CHECK_GE(new_size, size);
   return new_size;
 }
 
-static void *HwasanAllocate(StackTrace *stack, uptr orig_size, uptr alignment,
+static void *HwasanAllocate(StackTrace *stack, uptr orig_size,
+                            uptr orig_alignment, AllocType alloc_type,
                             bool zeroise) {
   // Keep this consistent with LSAN and ASAN behavior.
   if (UNLIKELY(orig_size == 0))
@@ -199,7 +235,7 @@ static void *HwasanAllocate(StackTrace *stack, uptr orig_size, uptr alignment,
     ReportRssLimitExceeded(stack);
   }
 
-  alignment = Max(alignment, kShadowAlignment);
+  uptr alignment = Max(orig_alignment, kShadowAlignment);
   uptr size = TaggedSize(orig_size);
   Thread *t = GetCurrentThread();
   void *allocated;
@@ -255,10 +291,12 @@ static void *HwasanAllocate(StackTrace *stack, uptr orig_size, uptr alignment,
 
   Metadata *meta =
       reinterpret_cast<Metadata *>(allocator.GetMetaData(allocated));
+  meta->SetAllocType(alloc_type);
 #if CAN_SANITIZE_LEAKS
   meta->SetLsanTag(__lsan::DisabledInThisThread() ? __lsan::kIgnored
                                                   : __lsan::kDirectlyLeaked);
 #endif
+  meta->SetRequestedAlignmentLog(ComputeRequestedAlignmentLog(orig_alignment));
   meta->SetAllocated(StackDepotPut(*stack), orig_size);
   RunMallocHooks(user_ptr, orig_size);
   return user_ptr;
@@ -285,7 +323,23 @@ static bool CheckInvalidFree(StackTrace *stack, void *untagged_ptr,
   return false;
 }
 
-static void HwasanDeallocate(StackTrace *stack, void *tagged_ptr) {
+static bool IsAllocTypeMismatch(AllocType alloc_type, AllocType dealloc_type,
+                                bool has_size) {
+  if (alloc_type == dealloc_type) {
+    return false;
+  }
+  if (alloc_type == FROM_ALIGNED_ALLOC && dealloc_type == FROM_MALLOC &&
+      !has_size) {
+    // aligned_alloc+free
+    return false;
+  }
+  return true;
+}
+
+static void HwasanDeallocate(StackTrace *stack, void *tagged_ptr,
+                             uptr delete_size, bool has_delete_size,
+                             uptr delete_alignment, bool has_delete_alignment,
+                             AllocType alloc_type) {
   CHECK(tagged_ptr);
   void *untagged_ptr = UntagPtr(tagged_ptr);
 
@@ -306,6 +360,8 @@ static void HwasanDeallocate(StackTrace *stack, void *tagged_ptr) {
   }
 
   uptr orig_size = meta->GetRequestedSize();
+  uptr orig_alignment_log = meta->GetRequestedAlignmentLog();
+  AllocType orig_alloc_type = meta->GetAllocType();
   u32 free_context_id = StackDepotPut(*stack);
   u32 alloc_context_id = meta->GetAllocStackId();
   u32 alloc_thread_id = meta->GetAllocThreadId();
@@ -328,6 +384,50 @@ static void HwasanDeallocate(StackTrace *stack, void *tagged_ptr) {
          (in_taggable_region && pointer_tag != short_granule_memtag)))
       ReportTailOverwritten(stack, reinterpret_cast<uptr>(tagged_ptr),
                             orig_size, tail_magic);
+  }
+
+  if (IsAllocTypeMismatch(orig_alloc_type, alloc_type, has_delete_size)) {
+    if (flags()->alloc_dealloc_mismatch) {
+      ReportAllocTypeMismatch(reinterpret_cast<uptr>(tagged_ptr), stack,
+                              orig_alloc_type, alloc_type);
+    }
+  } else {
+    if (flags()->new_delete_type_mismatch &&
+        (alloc_type == FROM_NEW || alloc_type == FROM_NEW_BR) &&
+        ((has_delete_size &&
+          (delete_size < orig_size || delete_size > orig_size)) ||
+         (has_delete_alignment &&
+          ComputeRequestedAlignmentLog(delete_alignment) !=
+              orig_alignment_log) ||
+         (!has_delete_alignment && orig_alignment_log != 0))) {
+      ReportNewDeleteTypeMismatch(
+          reinterpret_cast<uptr>(tagged_ptr), delete_size, has_delete_size,
+          delete_alignment, has_delete_alignment, stack);
+    }
+
+    if (flags()->malloc_free_type_mismatch) {
+      if (alloc_type == FROM_MALLOC) {
+        // aligned_alloc+free or malloc+free or malloc+free_sized
+        if (has_delete_size &&
+            (delete_size < orig_size || delete_size > orig_size)) {
+          ReportMallocFreeTypeMismatch(
+              reinterpret_cast<uptr>(tagged_ptr), delete_size, has_delete_size,
+              delete_alignment, has_delete_alignment, stack);
+        }
+      }
+      if (alloc_type == FROM_ALIGNED_ALLOC) {
+        // aligned_alloc+free_aligned_sized
+        if ((has_delete_size &&
+             (delete_size < orig_size || delete_size > orig_size)) ||
+            !IsPowerOfTwo(delete_alignment) ||
+            ComputeRequestedAlignmentLog(delete_alignment) !=
+                orig_alignment_log) {
+          ReportMallocFreeTypeMismatch(
+              reinterpret_cast<uptr>(tagged_ptr), delete_size, has_delete_size,
+              delete_alignment, has_delete_alignment, stack);
+        }
+      }
+    }
   }
 
   // TODO(kstoimenov): consider meta->SetUnallocated(free_context_id).
@@ -379,15 +479,15 @@ static void *HwasanReallocate(StackTrace *stack, void *tagged_ptr_old,
   void *untagged_ptr_old = UntagPtr(tagged_ptr_old);
   if (CheckInvalidFree(stack, untagged_ptr_old, tagged_ptr_old))
     return nullptr;
-  void *tagged_ptr_new =
-      HwasanAllocate(stack, new_size, alignment, false /*zeroise*/);
+  void *tagged_ptr_new = HwasanAllocate(stack, new_size, alignment, FROM_MALLOC,
+                                        false /*zeroise*/);
   if (tagged_ptr_old && tagged_ptr_new) {
     Metadata *meta =
         reinterpret_cast<Metadata *>(allocator.GetMetaData(untagged_ptr_old));
     void *untagged_ptr_new = UntagPtr(tagged_ptr_new);
     internal_memcpy(untagged_ptr_new, untagged_ptr_old,
                     Min(new_size, static_cast<uptr>(meta->GetRequestedSize())));
-    HwasanDeallocate(stack, tagged_ptr_old);
+    HwasanDeallocate(stack, tagged_ptr_old, 0, false, 0, false, FROM_MALLOC);
   }
   return tagged_ptr_new;
 }
@@ -398,17 +498,17 @@ static void *HwasanCalloc(StackTrace *stack, uptr nmemb, uptr size) {
       return nullptr;
     ReportCallocOverflow(nmemb, size, stack);
   }
-  return HwasanAllocate(stack, nmemb * size, sizeof(u64), true);
+  return HwasanAllocate(stack, nmemb * size, sizeof(u64), FROM_MALLOC, true);
 }
 
 HwasanChunkView FindHeapChunkByAddress(uptr address) {
   if (!allocator.PointerIsMine(reinterpret_cast<void *>(address)))
     return HwasanChunkView();
-  void *block = allocator.GetBlockBegin(reinterpret_cast<void*>(address));
+  void *block = allocator.GetBlockBegin(reinterpret_cast<void *>(address));
   if (!block)
     return HwasanChunkView();
   Metadata *metadata =
-      reinterpret_cast<Metadata*>(allocator.GetMetaData(block));
+      reinterpret_cast<Metadata *>(allocator.GetMetaData(block));
   return HwasanChunkView(reinterpret_cast<uptr>(block), metadata);
 }
 
@@ -429,16 +529,6 @@ static const void *AllocationBegin(const void *p) {
   return (const void *)AddTagToPointer((uptr)beg, tag);
 }
 
-static uptr AllocationSize(const void *p) {
-  const void *untagged_ptr = UntagPtr(p);
-  if (!untagged_ptr) return 0;
-  const void *beg = allocator.GetBlockBegin(untagged_ptr);
-  if (!beg)
-    return 0;
-  Metadata *b = (Metadata *)allocator.GetMetaData(beg);
-  return b->GetRequestedSize();
-}
-
 static uptr AllocationSizeFast(const void *p) {
   const void *untagged_ptr = UntagPtr(p);
   void *aligned_ptr = reinterpret_cast<void *>(
@@ -449,7 +539,7 @@ static uptr AllocationSizeFast(const void *p) {
 }
 
 void *hwasan_malloc(uptr size, StackTrace *stack) {
-  return SetErrnoOnNull(HwasanAllocate(stack, size, sizeof(u64), false));
+  return SetErrnoOnNull(HwasanAllocate(stack, size, 0, FROM_MALLOC, false));
 }
 
 void *hwasan_calloc(uptr nmemb, uptr size, StackTrace *stack) {
@@ -458,12 +548,12 @@ void *hwasan_calloc(uptr nmemb, uptr size, StackTrace *stack) {
 
 void *hwasan_realloc(void *ptr, uptr size, StackTrace *stack) {
   if (!ptr)
-    return SetErrnoOnNull(HwasanAllocate(stack, size, sizeof(u64), false));
+    return SetErrnoOnNull(HwasanAllocate(stack, size, 0, FROM_MALLOC, false));
   if (size == 0) {
-    HwasanDeallocate(stack, ptr);
+    HwasanDeallocate(stack, ptr, 0, false, 0, false, FROM_MALLOC);
     return nullptr;
   }
-  return SetErrnoOnNull(HwasanReallocate(stack, ptr, size, sizeof(u64)));
+  return SetErrnoOnNull(HwasanReallocate(stack, ptr, size, 0));
 }
 
 void *hwasan_reallocarray(void *ptr, uptr nmemb, uptr size, StackTrace *stack) {
@@ -478,7 +568,7 @@ void *hwasan_reallocarray(void *ptr, uptr nmemb, uptr size, StackTrace *stack) {
 
 void *hwasan_valloc(uptr size, StackTrace *stack) {
   return SetErrnoOnNull(
-      HwasanAllocate(stack, size, GetPageSizeCached(), false));
+      HwasanAllocate(stack, size, GetPageSizeCached(), FROM_MALLOC, false));
 }
 
 void *hwasan_pvalloc(uptr size, StackTrace *stack) {
@@ -491,7 +581,8 @@ void *hwasan_pvalloc(uptr size, StackTrace *stack) {
   }
   // pvalloc(0) should allocate one page.
   size = size ? RoundUpTo(size, PageSize) : PageSize;
-  return SetErrnoOnNull(HwasanAllocate(stack, size, PageSize, false));
+  return SetErrnoOnNull(
+      HwasanAllocate(stack, size, PageSize, FROM_MALLOC, false));
 }
 
 void *hwasan_aligned_alloc(uptr alignment, uptr size, StackTrace *stack) {
@@ -501,7 +592,8 @@ void *hwasan_aligned_alloc(uptr alignment, uptr size, StackTrace *stack) {
       return nullptr;
     ReportInvalidAlignedAllocAlignment(size, alignment, stack);
   }
-  return SetErrnoOnNull(HwasanAllocate(stack, size, alignment, false));
+  return SetErrnoOnNull(
+      HwasanAllocate(stack, size, alignment, FROM_ALIGNED_ALLOC, false));
 }
 
 void *hwasan_memalign(uptr alignment, uptr size, StackTrace *stack) {
@@ -511,17 +603,18 @@ void *hwasan_memalign(uptr alignment, uptr size, StackTrace *stack) {
       return nullptr;
     ReportInvalidAllocationAlignment(alignment, stack);
   }
-  return SetErrnoOnNull(HwasanAllocate(stack, size, alignment, false));
+  return SetErrnoOnNull(
+      HwasanAllocate(stack, size, alignment, FROM_MALLOC, false));
 }
 
 int hwasan_posix_memalign(void **memptr, uptr alignment, uptr size,
-                        StackTrace *stack) {
+                          StackTrace *stack) {
   if (UNLIKELY(!CheckPosixMemalignAlignment(alignment))) {
     if (AllocatorMayReturnNull())
       return errno_EINVAL;
     ReportInvalidPosixMemalignAlignment(alignment, stack);
   }
-  void *ptr = HwasanAllocate(stack, size, alignment, false);
+  void *ptr = HwasanAllocate(stack, size, alignment, FROM_MALLOC, false);
   if (UNLIKELY(!ptr))
     // OOM error is already taken care of by HwasanAllocate.
     return errno_ENOMEM;
@@ -531,7 +624,110 @@ int hwasan_posix_memalign(void **memptr, uptr alignment, uptr size,
 }
 
 void hwasan_free(void *ptr, StackTrace *stack) {
-  return HwasanDeallocate(stack, ptr);
+  return HwasanDeallocate(stack, ptr, 0, false, 0, false, FROM_MALLOC);
+}
+
+void hwasan_free_sized(void *ptr, size_t size, StackTrace *stack) {
+  return HwasanDeallocate(stack, ptr, size, true, 0, false, FROM_MALLOC);
+}
+
+void hwasan_free_aligned_sized(void *ptr, size_t alignment, size_t size,
+                               StackTrace *stack) {
+  return HwasanDeallocate(stack, ptr, size, true, alignment, true,
+                          FROM_ALIGNED_ALLOC);
+}
+
+namespace {
+
+void *hwasan_new(uptr size, StackTrace *stack, bool array) {
+  return SetErrnoOnNull(
+      HwasanAllocate(stack, size, 0, array ? FROM_NEW_BR : FROM_NEW, false));
+}
+
+void *hwasan_new_aligned(uptr size, uptr alignment, StackTrace *stack,
+                         bool array) {
+  if (UNLIKELY(!IsPowerOfTwo(alignment))) {
+    errno = errno_EINVAL;
+    if (AllocatorMayReturnNull())
+      return nullptr;
+    ReportInvalidAllocationAlignment(alignment, stack);
+  }
+  return SetErrnoOnNull(HwasanAllocate(stack, size, alignment,
+                                       array ? FROM_NEW_BR : FROM_NEW, false));
+}
+
+void hwasan_delete(void *ptr, StackTrace *stack, bool array) {
+  return HwasanDeallocate(stack, ptr, 0, false, 0, false,
+                          array ? FROM_NEW_BR : FROM_NEW);
+}
+
+void hwasan_delete_aligned(void *ptr, uptr alignment, StackTrace *stack,
+                           bool array) {
+  return HwasanDeallocate(stack, ptr, 0, false, alignment, true,
+                          array ? FROM_NEW_BR : FROM_NEW);
+}
+
+void hwasan_delete_sized(void *ptr, uptr size, StackTrace *stack, bool array) {
+  return HwasanDeallocate(stack, ptr, size, true, 0, false,
+                          array ? FROM_NEW_BR : FROM_NEW);
+}
+
+void hwasan_delete_sized_aligned(void *ptr, uptr size, uptr alignment,
+                                 StackTrace *stack, bool array) {
+  return HwasanDeallocate(stack, ptr, size, true, alignment, true,
+                          array ? FROM_NEW_BR : FROM_NEW);
+}
+
+}  // namespace
+
+void *hwasan_new(uptr size, StackTrace *stack) {
+  return hwasan_new(size, stack, /*array=*/false);
+}
+
+void *hwasan_new_aligned(uptr size, uptr alignment, StackTrace *stack) {
+  return hwasan_new_aligned(size, alignment, stack, /*array=*/false);
+}
+
+void *hwasan_new_array(uptr size, StackTrace *stack) {
+  return hwasan_new(size, stack, /*array=*/true);
+}
+
+void *hwasan_new_array_aligned(uptr size, uptr alignment, StackTrace *stack) {
+  return hwasan_new_aligned(size, alignment, stack, /*array=*/true);
+}
+
+void hwasan_delete(void *ptr, StackTrace *stack) {
+  hwasan_delete(ptr, stack, /*array=*/false);
+}
+
+void hwasan_delete_aligned(void *ptr, uptr alignment, StackTrace *stack) {
+  hwasan_delete_aligned(ptr, alignment, stack, /*array=*/false);
+}
+
+void hwasan_delete_sized(void *ptr, uptr size, StackTrace *stack) {
+  hwasan_delete_sized(ptr, size, stack, /*array=*/false);
+}
+
+void hwasan_delete_sized_aligned(void *ptr, uptr size, uptr alignment,
+                                 StackTrace *stack) {
+  hwasan_delete_sized_aligned(ptr, size, alignment, stack, /*array=*/false);
+}
+
+void hwasan_delete_array(void *ptr, StackTrace *stack) {
+  hwasan_delete(ptr, stack, /*array=*/true);
+}
+
+void hwasan_delete_array_aligned(void *ptr, uptr alignment, StackTrace *stack) {
+  hwasan_delete_aligned(ptr, alignment, stack, /*array=*/true);
+}
+
+void hwasan_delete_array_sized(void *ptr, uptr size, StackTrace *stack) {
+  hwasan_delete_sized(ptr, size, stack, /*array=*/true);
+}
+
+void hwasan_delete_array_sized_aligned(void *ptr, uptr size, uptr alignment,
+                                       StackTrace *stack) {
+  hwasan_delete_sized_aligned(ptr, size, alignment, stack, /*array=*/true);
 }
 
 }  // namespace __hwasan
@@ -539,13 +735,9 @@ void hwasan_free(void *ptr, StackTrace *stack) {
 // --- Implementation of LSan-specific functions --- {{{1
 namespace __lsan {
 
-void LockAllocator() {
-  __hwasan::HwasanAllocatorLock();
-}
+void LockAllocator() { __hwasan::HwasanAllocatorLock(); }
 
-void UnlockAllocator() {
-  __hwasan::HwasanAllocatorUnlock();
-}
+void UnlockAllocator() { __hwasan::HwasanAllocatorUnlock(); }
 
 void GetAllocatorGlobalRange(uptr *begin, uptr *end) {
   *begin = (uptr)&__hwasan::allocator;

@@ -31,13 +31,22 @@
 
 namespace __hwasan {
 
+enum AllocType {
+  FROM_MALLOC = 0,  // Memory block came from malloc, calloc, realloc, etc.
+  FROM_NEW = 1,     // Memory block came from operator new.
+  FROM_NEW_BR = 2,  // Memory block came from operator new [ ]
+  FROM_ALIGNED_ALLOC = 3  // Memory block came from aligned_alloc
+};
+
 struct Metadata {
  private:
   atomic_uint64_t alloc_context_id;
   u32 requested_size_low;
   u16 requested_size_high;
   atomic_uint8_t chunk_state;
-  u8 lsan_tag;
+  u8 alloc_type : 2;
+  u8 lsan_tag : 2;
+  u8 requested_alignment_log : 4;
 
  public:
   inline void SetAllocated(u32 stack, u64 size);
@@ -47,6 +56,10 @@ struct Metadata {
   inline u64 GetRequestedSize() const;
   inline u32 GetAllocStackId() const;
   inline u32 GetAllocThreadId() const;
+  inline void SetAllocType(AllocType type);
+  inline AllocType GetAllocType() const;
+  inline void SetRequestedAlignmentLog(u8 alignment_log);
+  inline u8 GetRequestedAlignmentLog() const;
   inline void SetLsanTag(__lsan::ChunkTag tag);
   inline __lsan::ChunkTag GetLsanTag() const;
 };
@@ -109,6 +122,9 @@ class HwasanChunkView {
   u32 GetAllocThreadId() const;
   bool FromSmallHeap() const;
   bool AddrIsInside(uptr addr) const;
+  AllocType GetAllocType() const;
+  u8 GetRequestedAlignmentLog() const;
+  uptr GetRequestedAlignment() const;
 
  private:
   friend class __lsan::LsanMetadata;

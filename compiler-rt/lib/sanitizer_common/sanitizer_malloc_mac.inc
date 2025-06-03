@@ -144,6 +144,17 @@ INTERCEPTOR(void, free, void *ptr) {
   COMMON_MALLOC_FREE(ptr);
 }
 
+INTERCEPTOR(void, free_sized, void *ptr, size_t size) {
+  COMMON_MALLOC_ENTER();
+  COMMON_MALLOC_FREE_SIZED(ptr, size);
+}
+
+INTERCEPTOR(void, free_aligned_sized, void *ptr, size_t alignment,
+            size_t size) {
+  COMMON_MALLOC_ENTER();
+  COMMON_MALLOC_FREE_ALIGNED_SIZED(ptr, alignment, size);
+}
+
 INTERCEPTOR(void *, realloc, void *ptr, size_t size) {
   COMMON_MALLOC_ENTER();
   COMMON_MALLOC_REALLOC(ptr, size);
@@ -173,6 +184,14 @@ INTERCEPTOR(int, posix_memalign, void **memptr, size_t alignment, size_t size) {
   COMMON_MALLOC_POSIX_MEMALIGN(memptr, alignment, size);
   return res;
 }
+
+#if SANITIZER_INTERCEPT_ALIGNED_ALLOC
+INTERCEPTOR(void *, aligned_alloc, size_t alignment, size_t size) {
+  COMMON_MALLOC_ENTER();
+  COMMON_MALLOC_ALIGNED_ALLOC(alignment, size);
+  return p;
+}
+#endif
 
 namespace {
 

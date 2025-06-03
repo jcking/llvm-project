@@ -220,6 +220,17 @@ void lsan_free(void *p) {
   Deallocate(p);
 }
 
+void lsan_free_sized(void *p, uptr size) {
+  static_cast<void>(size);
+  Deallocate(p);
+}
+
+void lsan_free_aligned_sized(void *p, uptr alignment, uptr size) {
+  static_cast<void>(alignment);
+  static_cast<void>(size);
+  Deallocate(p);
+}
+
 void *lsan_realloc(void *p, uptr size, const StackTrace &stack) {
   return SetErrnoOnNull(Reallocate(stack, p, size, 1));
 }

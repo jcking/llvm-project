@@ -69,12 +69,25 @@ __declspec(noinline) size_t _msize_base(void *ptr) { return _msize(ptr); }
 
 __declspec(noinline) void free(void *ptr) {
   GET_STACK_TRACE_FREE;
-  return asan_free(ptr, &stack, FROM_MALLOC);
+  return asan_free(ptr, &stack);
 }
 
 __declspec(noinline) void _free_dbg(void *ptr, int) { free(ptr); }
 
 __declspec(noinline) void _free_base(void *ptr) { free(ptr); }
+
+__declspec(noinline) void free_sized(void *ptr, size_t size) {
+  GET_STACK_TRACE_FREE;
+  return asan_free_sized(ptr, size, &stack);
+}
+
+__declspec(noinline) void _free_sized_dbg(void *ptr, size_t size) {
+  free_sized(ptr, size);
+}
+
+__declspec(noinline) void _free_sized_base(void *ptr, size_t size) {
+  free_sized(ptr, size);
+}
 
 __declspec(noinline) void *malloc(size_t size) {
   GET_STACK_TRACE_MALLOC;
@@ -156,6 +169,10 @@ __declspec(dllexport) size_t __cdecl __asan_msize(void *ptr) {
   return _msize(ptr);
 }
 __declspec(dllexport) void __cdecl __asan_free(void *const ptr) { free(ptr); }
+__declspec(dllexport) void __cdecl __asan_free_sized(void *const ptr,
+                                                     const size_t size) {
+  free_sized(ptr);
+}
 __declspec(dllexport) void *__cdecl __asan_malloc(const size_t size) {
   return malloc(size);
 }
@@ -252,7 +269,7 @@ INTERCEPTOR_WINAPI(BOOL, HeapFree, HANDLE hHeap, DWORD dwFlags, LPVOID lpMem) {
     CHECK((HEAP_FREE_UNSUPPORTED_FLAGS & dwFlags) != 0 && "unsupported flags");
   }
   GET_STACK_TRACE_FREE;
-  asan_free(lpMem, &stack, FROM_MALLOC);
+  asan_free(lpMem, &stack);
   return true;
 }
 
@@ -306,7 +323,7 @@ void *SharedReAlloc(ReAllocFunction reallocFunc, SizeFunction heapSizeFunc,
         if (replacement_alloc) {
           size_t old_size = heapSizeFunc(hHeap, dwFlags, lpMem);
           if (old_size == ((size_t)0) - 1) {
-            asan_free(replacement_alloc, &stack, FROM_MALLOC);
+            asan_free(replacement_alloc, &stack);
             return nullptr;
           }
           REAL(memcpy)(replacement_alloc, lpMem, old_size);
@@ -331,7 +348,7 @@ void *SharedReAlloc(ReAllocFunction reallocFunc, SizeFunction heapSizeFunc,
         old_usable_size = asan_malloc_usable_size(lpMem, pc, bp);
         REAL(memcpy)(replacement_alloc, lpMem,
                      Min<size_t>(dwBytes, old_usable_size));
-        asan_free(lpMem, &stack, FROM_MALLOC);
+        asan_free(lpMem, &stack);
       }
       return replacement_alloc;
     }
@@ -429,7 +446,7 @@ INTERCEPTOR_WINAPI(BOOL, RtlFreeHeap, HANDLE HeapHandle, DWORD Flags,
     return REAL(RtlFreeHeap)(HeapHandle, Flags, BaseAddress);
   }
   GET_STACK_TRACE_FREE;
-  asan_free(BaseAddress, &stack, FROM_MALLOC);
+  asan_free(BaseAddress, &stack);
   return true;
 }
 
@@ -479,6 +496,8 @@ static void TryToOverrideFunction(const char *fname, uptr new_func) {
 void ReplaceSystemMalloc() {
   TryToOverrideFunction("free", (uptr)free);
   TryToOverrideFunction("_free_base", (uptr)free);
+  TryToOverrideFunction("free_sized", (uptr)free_sized);
+  TryToOverrideFunction("_free_sized_base", (uptr)free_sized);
   TryToOverrideFunction("malloc", (uptr)malloc);
   TryToOverrideFunction("_malloc_base", (uptr)malloc);
   TryToOverrideFunction("_malloc_crt", (uptr)malloc);

@@ -82,16 +82,45 @@ struct ErrorNewDeleteTypeMismatch : ErrorBase {
   const BufferedStackTrace *free_stack;
   HeapAddressDescription addr_description;
   uptr delete_size;
+  bool has_delete_size;
   uptr delete_alignment;
+  bool has_delete_alignment;
 
   ErrorNewDeleteTypeMismatch() = default;  // (*)
   ErrorNewDeleteTypeMismatch(u32 tid, BufferedStackTrace *stack, uptr addr,
-                             uptr delete_size_, uptr delete_alignment_)
+                             uptr delete_size_, bool has_delete_size_,
+                             uptr delete_alignment_, bool has_delete_alignment_)
       : ErrorBase(tid, 10, "new-delete-type-mismatch"),
         free_stack(stack),
         delete_size(delete_size_),
-        delete_alignment(delete_alignment_) {
-    GetHeapAddressInformation(addr, 1, &addr_description);
+        has_delete_size(has_delete_size_),
+        delete_alignment(delete_alignment_),
+        has_delete_alignment(has_delete_alignment_) {
+    CHECK(GetHeapAddressInformation(addr, 1, &addr_description));
+  }
+  void Print();
+};
+
+struct ErrorMallocFreeTypeMismatch : ErrorBase {
+  const BufferedStackTrace *free_stack;
+  HeapAddressDescription addr_description;
+  uptr delete_size;
+  bool has_delete_size;
+  uptr delete_alignment;
+  bool has_delete_alignment;
+
+  ErrorMallocFreeTypeMismatch() = default;  // (*)
+  ErrorMallocFreeTypeMismatch(u32 tid, BufferedStackTrace *stack, uptr addr,
+                              uptr delete_size_, bool has_delete_size_,
+                              uptr delete_alignment_,
+                              bool has_delete_alignment_)
+      : ErrorBase(tid, 10, "malloc-free-type-mismatch"),
+        free_stack(stack),
+        delete_size(delete_size_),
+        has_delete_size(has_delete_size_),
+        delete_alignment(delete_alignment_),
+        has_delete_alignment(has_delete_alignment_) {
+    CHECK(GetHeapAddressInformation(addr, 1, &addr_description));
   }
   void Print();
 };
@@ -442,6 +471,7 @@ struct ErrorGeneric : ErrorBase {
   macro(BadParamsToCopyContiguousContainerAnnotations)     \
   macro(ODRViolation)                                      \
   macro(InvalidPointerPair)                                \
+  macro(MallocFreeTypeMismatch)                            \
   macro(Generic)
 // clang-format on
 

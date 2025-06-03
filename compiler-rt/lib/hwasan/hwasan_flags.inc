@@ -91,3 +91,17 @@ HWASAN_FLAG(
     "instead of choosing one dynamically."
     "Tip: this can be combined with the compiler option, "
     "-hwasan-mapping-offset, to optimize the instrumentation.")
+
+// Turn off alloc/dealloc mismatch checker on Mac and Windows for now.
+// https://github.com/google/sanitizers/issues/131
+// https://github.com/google/sanitizers/issues/309
+// TODO(glider,timurrrr): Fix known issues and enable this back.
+HWASAN_FLAG(bool, alloc_dealloc_mismatch,
+            !SANITIZER_APPLE && !SANITIZER_WINDOWS && !SANITIZER_ANDROID,
+            "Report errors on malloc/delete, new/free, new/delete[], etc.")
+
+HWASAN_FLAG(bool, new_delete_type_mismatch, true,
+            "Report errors on mismatch between size of new and delete.")
+HWASAN_FLAG(bool, malloc_free_type_mismatch, true,
+            "Report errors on mismatch between size of malloc and "
+            "free_sized/free_aligned_sized.")

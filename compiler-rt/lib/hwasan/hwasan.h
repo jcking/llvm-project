@@ -135,6 +135,24 @@ void *hwasan_memalign(uptr alignment, uptr size, StackTrace *stack);
 int hwasan_posix_memalign(void **memptr, uptr alignment, uptr size,
                         StackTrace *stack);
 void hwasan_free(void *ptr, StackTrace *stack);
+void hwasan_free_sized(void *ptr, size_t size, StackTrace *stack);
+void hwasan_free_aligned_sized(void *ptr, size_t alignment, size_t size,
+                               StackTrace *stack);
+
+void *hwasan_new(uptr size, StackTrace *stack);
+void *hwasan_new_aligned(uptr size, uptr alignment, StackTrace *stack);
+void *hwasan_new_array(uptr size, StackTrace *stack);
+void *hwasan_new_array_aligned(uptr size, uptr alignment, StackTrace *stack);
+void hwasan_delete(void *ptr, StackTrace *stack);
+void hwasan_delete_aligned(void *ptr, uptr alignment, StackTrace *stack);
+void hwasan_delete_sized(void *ptr, uptr size, StackTrace *stack);
+void hwasan_delete_sized_aligned(void *ptr, uptr size, uptr alignment,
+                                 StackTrace *stack);
+void hwasan_delete_array(void *ptr, StackTrace *stack);
+void hwasan_delete_array_aligned(void *ptr, uptr alignment, StackTrace *stack);
+void hwasan_delete_array_sized(void *ptr, uptr size, StackTrace *stack);
+void hwasan_delete_array_sized_aligned(void *ptr, uptr size, uptr alignment,
+                                       StackTrace *stack);
 
 void InstallAtExitHandler();
 
