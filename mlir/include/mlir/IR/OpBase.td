@@ -69,14 +69,6 @@ def AutomaticAllocationScope :
 // Op supports operand broadcast behavior.
 def ResultsBroadcastableShape :
   NativeOpTrait<"ResultsBroadcastableShape">;
-// X op Y == Y op X
-def Commutative  : NativeOpTrait<"IsCommutative">;
-// op op X == op X (unary) / X op X == X (binary)
-// FIXME: Idempotent should depend on SameOperandsAndResultType
-def Idempotent : NativeOpTrait<"IsIdempotent">;
-// op op X == X
-// FIXME: Involution should depend on SameOperandsAndResultType
-def Involution : NativeOpTrait<"IsInvolution">;
 // Op behaves like a constant.
 def ConstantLike : NativeOpTrait<"ConstantLike">;
 // Op is isolated from above.
@@ -770,5 +762,85 @@ class TCopVTEtAreSameAt<list<int> indices> : CPred<
       "::mlir::ArrayRef<unsigned>({" # !interleave(indices, ", ") # "}), "
       "[this](unsigned i) { return getElementTypeOrSelf(this->getOperand(i)); "
       "}))">;
+
+// X op Y == Y op X
+def Commutative  : NativeOpTrait<"AlwaysCommutativeImpl">;
+
+// op op X == op X (unary) / X op X == X (binary)
+// FIXME: Idempotent should depend on SameOperandsAndResultType
+def Idempotent : NativeOpTrait<"AlwaysIdempotentImpl">;
+
+// op op X == X
+// FIXME: Involution should depend on SameOperandsAndResultType
+def Involution : NativeOpTrait<"AlwaysInvolutionImpl">;
+
+def ConditionallyCommutativeImplInterface : OpInterface<"ConditionallyCommutativeOpInterface"> {
+  let description = [{
+    This interface describes an operation which is conditionally commutative.
+  }];
+  let cppNamespace = "::mlir";
+  let methods = [
+    InterfaceMethod<
+      /*desc=*/[{
+        Returns true if the specific operation in question is commutative.
+      }],
+      /*retTy=*/"bool",
+      /*methodName=*/"isCommutative",
+      /*args=*/(ins),
+      /*methodBody=*/"",
+      /*defaultImplementation=*/[{ return false; }]
+    >
+  ];
+}
+
+def ConditionallyCommutativeImplTrait : NativeOpTrait<"ConditionallyCommutativeImpl">;
+
+def ConditionallyCommutative : TraitList<[ConditionallyCommutativeImplInterface, ConditionallyCommutativeImplTrait]>;
+
+def ConditionallyInvolutionImplInterface : OpInterface<"ConditionallyInvolutionOpInterface"> {
+  let description = [{
+    This interface describes an operation which is conditionally an involution.
+  }];
+  let cppNamespace = "::mlir";
+  let methods = [
+    InterfaceMethod<
+      /*desc=*/[{
+        Returns true if the specific operation in question is an involution.
+      }],
+      /*retTy=*/"bool",
+      /*methodName=*/"isInvolution",
+      /*args=*/(ins),
+      /*methodBody=*/"",
+      /*defaultImplementation=*/[{ return false; }]
+    >
+  ];
+}
+
+def ConditionallyInvolutionImplTrait : NativeOpTrait<"ConditionallyInvolutionImpl">;
+
+def ConditionallyInvolution : TraitList<[ConditionallyInvolutionImplInterface, ConditionallyInvolutionImplTrait]>;
+
+def ConditionallyIdempotentImplInterface : OpInterface<"ConditionallyIdempotentOpInterface"> {
+  let description = [{
+    This interface describes an operation which is conditionally idempotent.
+  }];
+  let cppNamespace = "::mlir";
+  let methods = [
+    InterfaceMethod<
+      /*desc=*/[{
+        Returns true if the specific operation in question is idempotent.
+      }],
+      /*retTy=*/"bool",
+      /*methodName=*/"isIdempotent",
+      /*args=*/(ins),
+      /*methodBody=*/"",
+      /*defaultImplementation=*/[{ return false; }]
+    >
+  ];
+}
+
+def ConditionallyIdempotentImplTrait : NativeOpTrait<"ConditionallyIdempotentImpl">;
+
+def ConditionallyIdempotent : TraitList<[ConditionallyIdempotentImplInterface, ConditionallyIdempotentImplTrait]>;
 
 #endif // OP_BASE

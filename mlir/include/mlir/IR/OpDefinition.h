@@ -1160,62 +1160,6 @@ public:
   }
 };
 
-/// This class adds property that the operation is commutative.
-template <typename ConcreteType>
-class IsCommutative : public TraitBase<ConcreteType, IsCommutative> {
-public:
-  static LogicalResult foldTrait(Operation *op, ArrayRef<Attribute> operands,
-                                 SmallVectorImpl<OpFoldResult> &results) {
-    return impl::foldCommutative(op, operands, results);
-  }
-};
-
-/// This class adds property that the operation is an involution.
-/// This means a unary to unary operation "f" that satisfies f(f(x)) = x
-template <typename ConcreteType>
-class IsInvolution : public TraitBase<ConcreteType, IsInvolution> {
-public:
-  static LogicalResult verifyTrait(Operation *op) {
-    static_assert(ConcreteType::template hasTrait<OneResult>(),
-                  "expected operation to produce one result");
-    static_assert(ConcreteType::template hasTrait<OneOperand>(),
-                  "expected operation to take one operand");
-    static_assert(ConcreteType::template hasTrait<SameOperandsAndResultType>(),
-                  "expected operation to preserve type");
-    // Involution requires the operation to be side effect free as well
-    // but currently this check is under a FIXME and is not actually done.
-    return impl::verifyIsInvolution(op);
-  }
-
-  static OpFoldResult foldTrait(Operation *op, ArrayRef<Attribute> operands) {
-    return impl::foldInvolution(op);
-  }
-};
-
-/// This class adds property that the operation is idempotent.
-/// This means a unary to unary operation "f" that satisfies f(f(x)) = f(x),
-/// or a binary operation "g" that satisfies g(x, x) = x.
-template <typename ConcreteType>
-class IsIdempotent : public TraitBase<ConcreteType, IsIdempotent> {
-public:
-  static LogicalResult verifyTrait(Operation *op) {
-    static_assert(ConcreteType::template hasTrait<OneResult>(),
-                  "expected operation to produce one result");
-    static_assert(ConcreteType::template hasTrait<OneOperand>() ||
-                      ConcreteType::template hasTrait<NOperands<2>::Impl>(),
-                  "expected operation to take one or two operands");
-    static_assert(ConcreteType::template hasTrait<SameOperandsAndResultType>(),
-                  "expected operation to preserve type");
-    // Idempotent requires the operation to be side effect free as well
-    // but currently this check is under a FIXME and is not actually done.
-    return impl::verifyIsIdempotent(op);
-  }
-
-  static OpFoldResult foldTrait(Operation *op, ArrayRef<Attribute> operands) {
-    return impl::foldIdempotent(op);
-  }
-};
-
 /// This class verifies that all operands of the specified op have a float type,
 /// a vector thereof, or a tensor thereof.
 template <typename ConcreteType>
@@ -2224,5 +2168,255 @@ struct DenseMapInfo<T,
 } // namespace llvm
 
 MLIR_DECLARE_EXPLICIT_TYPE_ID(mlir::EmptyProperties)
+
+#include "mlir/IR/OpBase.h.inc"
+
+namespace mlir {
+
+/// Tests whether the given operation is commutative.
+///
+/// This must be used instead of attempting to interact with OpTrait::IsCommutative, OpTrait::AlwaysCommutativeImpl, or ConditionallyCommutativeOpInterface.
+[[nodiscard]]
+bool isCommutative(Operation *op);
+
+// Tests whether a given operation name is always commutative.
+[[nodiscard]]
+bool isAlwaysCommutative(OperationName name);
+
+// Tests whether a given operation name is conditionally commutative.
+[[nodiscard]]
+bool isConditionallyCommutative(OperationName name);
+
+/// Verifies the given operation can be commutative.
+LogicalResult verifyCommutative(Operation *op);
+
+/// Tests whether the given operation is an involution.
+///
+/// This must be used instead of attempting to interact with OpTrait::IsInvolution, OpTrait::AlwaysInvolutionImpl, or ConditionallyInvolutionOpInterface.
+[[nodiscard]]
+bool isInvolution(Operation *op);
+
+// Tests whether a given operation name is always an involution.
+[[nodiscard]]
+bool isAlwaysInvolution(OperationName name);
+
+// Tests whether a given operation name is conditionally an involution.
+[[nodiscard]]
+bool isConditionallyInvolution(OperationName name);
+
+/// Verifies the given operation can be an involution.
+LogicalResult verifyInvolution(Operation *op);
+
+/// Tests whether the given operation is idempotent.
+///
+/// This must be used instead of attempting to interact with OpTrait::IsIdempotent, OpTrait::AlwaysIdempotentImpl, or ConditionallyIdempotentOpInterface.
+[[nodiscard]]
+bool isIdempotent(Operation *op);
+
+// Tests whether a given operation name is always idempotent.
+[[nodiscard]]
+bool isAlwaysIdempotent(OperationName name);
+
+// Tests whether a given operation name is conditionally idempotent.
+[[nodiscard]]
+bool isConditionallyIdempotent(OperationName name);
+
+/// Verifies the given operation can be idempotent.
+LogicalResult verifyIdempotent(Operation *op);
+
+namespace OpTrait {
+
+template <typename ConcreteType>
+class AlwaysCommutativeImpl;
+template <typename ConcreteType>
+class ConditionallyCommutativeImpl;
+template <typename ConcreteType>
+class AlwaysInvolutionImpl;
+template <typename ConcreteType>
+class ConditionallyInvolutionImpl;
+template <typename ConcreteType>
+class AlwaysIdempotentImpl;
+template <typename ConcreteType>
+class ConditionallyIdempotentImpl;
+
+/// Trait adding the property that the operation is always commutative.
+///
+/// Should not be interacted with directly outside of the core MLIR operation implementation. Use mlir::isCommutative and mlir::isAlwaysCommutative instead.
+template <typename ConcreteType>
+class AlwaysCommutativeImpl : public TraitBase<ConcreteType, AlwaysCommutativeImpl> {
+public:
+  static LogicalResult verifyTrait(Operation *op) {
+    static_assert(!ConcreteType::template hasTrait<ConditionallyCommutativeImpl>(),
+                  "expected operation to not be conditionally commutative");
+    static_assert(!ConcreteType::template hasTrait<ConditionallyCommutativeOpInterface::Trait>(),
+                  "expected operation to not implement interface ConditionallyCommutativeOpInterface");
+    return success();
+  }
+
+  static LogicalResult foldTrait(Operation *op, ArrayRef<Attribute> operands,
+                                 SmallVectorImpl<OpFoldResult> &results) {
+    return impl::foldCommutative(op, operands, results);
+  }
+};
+
+/// Trait adding the property that the operation is conditionally commutative.
+///
+/// Should not be interacted with directly outside of the core MLIR operation implementation. Use mlir::isCommutative and mlir::isConditionallyCommutative instead.
+template <typename ConcreteType>
+class ConditionallyCommutativeImpl : public TraitBase<ConcreteType, ConditionallyCommutativeImpl> {
+public:
+  static LogicalResult verifyTrait(Operation *op) {
+    static_assert(!ConcreteType::template hasTrait<AlwaysCommutativeImpl>(),
+                  "expected operation to not be always commutative");
+    static_assert(ConcreteType::template hasTrait<ConditionallyCommutativeOpInterface::Trait>(),
+                  "expected operation to implement interface ConditionallyCommutativeOpInterface");
+    return success();
+  }
+
+  static LogicalResult foldTrait(Operation *op, ArrayRef<Attribute> operands,
+                                 SmallVectorImpl<OpFoldResult> &results) {
+    if (cast<ConcreteType>(op).isCommutative()) {
+      return impl::foldCommutative(op, operands, results);
+    }
+    return success();
+  }
+};
+
+// Backwards compatible alias.
+template <typename ConcreteType>
+using IsCommutative [[deprecated("use mlir::isCommutative")]] = AlwaysCommutativeImpl<ConcreteType>;
+
+/// Trait adding the property that the operation is always an involution.
+///
+/// Should not be interacted with directly outside of the core MLIR operation implementation. Use mlir::isInvolution and mlir::isAlwaysInvolution instead.
+template <typename ConcreteType>
+class AlwaysInvolutionImpl : public TraitBase<ConcreteType, AlwaysInvolutionImpl> {
+public:
+  static LogicalResult verifyTrait(Operation *op) {
+    static_assert(!ConcreteType::template hasTrait<ConditionallyInvolutionImpl>(),
+                  "expected operation to not be conditionally involution");
+    static_assert(!ConcreteType::template hasTrait<ConditionallyInvolutionOpInterface::Trait>(),
+                  "expected operation to not implement interface ConditionallyInvolutionOpInterface");
+    static_assert(ConcreteType::template hasTrait<OneResult>(),
+                  "expected operation to produce one result");
+    static_assert(ConcreteType::template hasTrait<OneOperand>(),
+                  "expected operation to take one operand");
+    static_assert(ConcreteType::template hasTrait<SameOperandsAndResultType>(),
+                  "expected operation to preserve type");
+    // Involution requires the operation to be side effect free as well
+    // but currently this check is under a FIXME and is not actually done.
+    return impl::verifyIsInvolution(op);
+  }
+
+  static OpFoldResult foldTrait(Operation *op, ArrayRef<Attribute> operands) {
+    return impl::foldInvolution(op);
+  }
+};
+
+/// Trait adding the property that the operation is conditionally an involution.
+///
+/// Should not be interacted with directly outside of the core MLIR operation implementation. Use mlir::isInvolution and mlir::isConditionallyInvolution instead.
+template <typename ConcreteType>
+class ConditionallyInvolutionImpl : public TraitBase<ConcreteType, ConditionallyInvolutionImpl> {
+public:
+  static LogicalResult verifyTrait(Operation *op) {
+    static_assert(!ConcreteType::template hasTrait<AlwaysInvolutionImpl>(),
+                  "expected operation to not be always involution");
+    static_assert(ConcreteType::template hasTrait<ConditionallyInvolutionOpInterface::Trait>(),
+                  "expected operation to implement interface ConditionallyInvolutionOpInterface");
+    static_assert(ConcreteType::template hasTrait<OneResult>(),
+                  "expected operation to produce one result");
+    static_assert(ConcreteType::template hasTrait<OneOperand>(),
+                  "expected operation to take one operand");
+    static_assert(ConcreteType::template hasTrait<SameOperandsAndResultType>(),
+                  "expected operation to preserve type");
+    // Involution requires the operation to be side effect free as well
+    // but currently this check is under a FIXME and is not actually done.
+    if (cast<ConcreteType>(op).isInvolution()) {
+      return impl::verifyIsInvolution(op);
+    }
+  }
+
+  static OpFoldResult foldTrait(Operation *op, ArrayRef<Attribute> operands) {
+    if (cast<ConcreteType>(op).isInvolution()) {
+      return impl::foldInvolution(op);
+    }
+    return {};
+  }
+};
+
+// Backwards compatible alias.
+template <typename ConcreteType>
+using IsInvolution [[deprecated("use mlir::isInvolution")]] = AlwaysInvolutionImpl<ConcreteType>;
+
+/// Trait adding the property that the operation is always idempotent.
+///
+/// Should not be interacted with directly outside of the core MLIR operation implementation. Use mlir::isIdempotent and mlir::isAlwaysIdempotent instead.
+template <typename ConcreteType>
+class AlwaysIdempotentImpl : public TraitBase<ConcreteType, AlwaysIdempotentImpl> {
+public:
+  static LogicalResult verifyTrait(Operation *op) {
+    static_assert(!ConcreteType::template hasTrait<ConditionallyIdempotentImpl>(),
+                  "expected operation to not be conditionally idempotent");
+    static_assert(!ConcreteType::template hasTrait<ConditionallyIdempotentOpInterface::Trait>(),
+                  "expected operation to not implement interface ConditionallyIdempotentOpInterface");
+    static_assert(ConcreteType::template hasTrait<OneResult>(),
+                  "expected operation to produce one result");
+    static_assert(ConcreteType::template hasTrait<OneOperand>() ||
+                      ConcreteType::template hasTrait<NOperands<2>::Impl>(),
+                  "expected operation to take one or two operands");
+    static_assert(ConcreteType::template hasTrait<SameOperandsAndResultType>(),
+                  "expected operation to preserve type");
+    // Idempotent requires the operation to be side effect free as well
+    // but currently this check is under a FIXME and is not actually done.
+    return impl::verifyIsIdempotent(op);
+  }
+
+  static OpFoldResult foldTrait(Operation *op, ArrayRef<Attribute> operands) {
+    return impl::foldIdempotent(op);
+  }
+};
+
+/// Trait adding the property that the operation is conditionally idempotent.
+///
+/// Should not be interacted with directly outside of the core MLIR operation implementation. Use mlir::isIdempotent and mlir::isConditionallyIdempotent instead.
+template <typename ConcreteType>
+class ConditionallyIdempotentImpl : public TraitBase<ConcreteType, ConditionallyIdempotentImpl> {
+public:
+  static LogicalResult verifyTrait(Operation *op) {
+    static_assert(!ConcreteType::template hasTrait<AlwaysIdempotentImpl>(),
+                  "expected operation to not be always idempotent");
+    static_assert(ConcreteType::template hasTrait<ConditionallyIdempotentOpInterface::Trait>(),
+                  "expected operation to implement interface ConditionallyIdempotentOpInterface");
+    static_assert(ConcreteType::template hasTrait<OneResult>(),
+                  "expected operation to produce one result");
+    static_assert(ConcreteType::template hasTrait<OneOperand>() ||
+                      ConcreteType::template hasTrait<NOperands<2>::Impl>(),
+                  "expected operation to take one or two operands");
+    static_assert(ConcreteType::template hasTrait<SameOperandsAndResultType>(),
+                  "expected operation to preserve type");
+    // Idempotent requires the operation to be side effect free as well
+    // but currently this check is under a FIXME and is not actually done.
+    if (cast<ConcreteType>(op).isIdempotent()) {
+      return impl::verifyIsIdempotent(op);
+    }
+    return success();
+  }
+
+  static OpFoldResult foldTrait(Operation *op, ArrayRef<Attribute> operands) {
+    if (cast<ConcreteType>(op).isIdempotent()) {
+      return impl::foldIdempotent(op);
+    }
+    return {};
+  }
+};
+
+// Backwards compatible alias.
+template <typename ConcreteType>
+using IsIdempotent [[deprecated("use mlir::isIdempotent")]] = AlwaysIdempotentImpl<ConcreteType>;
+
+} // namespace OpTrait
+
+} // namespace mlir
 
 #endif

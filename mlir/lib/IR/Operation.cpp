@@ -1434,3 +1434,135 @@ void impl::ensureRegionTerminator(
   OpBuilder opBuilder(builder.getContext());
   ensureRegionTerminator(region, opBuilder, loc, buildTerminatorOp);
 }
+
+LogicalResult mlir::verifyCommutative(Operation *op) {
+  // Pretty much any operation can be commutative. The requirement is that
+  // regardless of the order of operands to the operation the results will
+  // be the same.
+  assert(op != nullptr);
+  return success();
+}
+
+LogicalResult mlir::verifyInvolution(Operation *op) {
+  // Must produce one result.
+  if (failed(OpTrait::impl::verifyOneResult(op))) {
+    return failure();
+  }
+  // Must consume one operand.
+  if (failed(OpTrait::impl::verifyOneOperand(op))) {
+    return failure();
+  }
+  // Types of the operand and result must match.
+  if (failed(OpTrait::impl::verifySameOperandsAndResultType(op))) {
+    return failure();
+  }
+  return success();
+}
+
+LogicalResult mlir::verifyIdempotent(Operation *op) {
+  // Must produce one result.
+  if (failed(OpTrait::impl::verifyOneResult(op))) {
+    return failure();
+  }
+  // Types of the operands and result must match.
+  if (failed(OpTrait::impl::verifySameOperandsAndResultType(op))) {
+    return failure();
+  }
+  // May consume one operand.
+  if (op->getNumOperands() == 1) {
+    return success();
+  }
+  // May consume two operands.
+  if (op->getNumOperands() == 2) {
+    return success();
+  }
+  return op->emitOpError()
+         << "expected 1 or 2 operands, but found "
+         << op->getNumOperands();
+}
+
+bool mlir::isCommutative(Operation *op) {
+  if (isAlwaysCommutative(op)) {
+    return true;
+  }
+  if (ConditionallyCommutativeOpInterface iface = dyn_cast<ConditionallyCommutativeOpInterface>(op)) {
+    const bool commutative = iface.isCommutative();
+    assert(!commutative || succeeded(verifyCommutative(op)));
+    return commutative;
+  }
+  return false;
+}
+
+bool mlir::isAlwaysCommutative(OperationName name) {
+  if (name.hasTrait<OpTrait::AlwaysCommutativeImpl>()) {
+    assert(!name.hasInterface<ConditionallyCommutativeOpInterface>());
+    return true;
+  }
+  return false;
+}
+
+bool mlir::isConditionallyCommutative(OperationName name) {
+  if (name.hasPromiseOrImplementsInterface<ConditionallyCommutativeOpInterface>()) {
+    assert(!name.hasTrait<OpTrait::AlwaysCommutativeImpl>());
+    return true;
+  }
+  return false;
+}
+
+bool mlir::isInvolution(Operation *op) {
+  if (isAlwaysInvolution(op)) {
+    return true;
+  }
+  if (ConditionallyInvolutionOpInterface iface = dyn_cast<ConditionallyInvolutionOpInterface>(op)) {
+    const bool involution = iface.isInvolution();
+    assert(!involution || succeeded(verifyInvolution(op)));
+    return involution;
+  }
+  return false;
+}
+
+bool mlir::isAlwaysInvolution(OperationName name) {
+  if (name.hasTrait<OpTrait::AlwaysInvolutionImpl>()) {
+    assert(!name.hasInterface<ConditionallyInvolutionOpInterface>());
+    return true;
+  }
+  return false;
+}
+
+bool mlir::isConditionallyInvolution(OperationName name) {
+  if (name.hasPromiseOrImplementsInterface<ConditionallyInvolutionOpInterface>()) {
+    assert(!name.hasTrait<OpTrait::AlwaysInvolutionImpl>());
+    return true;
+  }
+  return false;
+}
+
+bool mlir::isIdempotent(Operation *op) {
+  if (isAlwaysIdempotent(op)) {
+    return true;
+  }
+  if (ConditionallyIdempotentOpInterface iface = dyn_cast<ConditionallyIdempotentOpInterface>(op)) {
+    const bool idempotent = iface.isIdempotent();
+    assert(!idempotent || succeeded(verifyIdempotent(op)));
+    return idempotent;
+  }
+  return false;
+}
+
+bool mlir::isAlwaysIdempotent(OperationName name) {
+  if (name.hasTrait<OpTrait::AlwaysIdempotentImpl>()) {
+    assert(!name.hasInterface<ConditionallyIdempotentOpInterface>());
+    return true;
+  }
+  return false;
+}
+
+bool mlir::isConditionallyIdempotent(OperationName name) {
+  if (name.hasPromiseOrImplementsInterface<ConditionallyIdempotentOpInterface>()) {
+    assert(!name.hasTrait<OpTrait::AlwaysIdempotentImpl>());
+    return true;
+  }
+  return false;
+}
+
+#include "mlir/IR/OpBase.cpp.inc"

@@ -66,6 +66,11 @@ set(LLVM_TARGET_DEFINITIONS OpAsmDialectInterface.td)
 mlir_tablegen(OpAsmDialectInterface.h.inc -gen-dialect-interface-decls)
 add_mlir_generic_tablegen_target(MLIROpAsmDialectInterfaceIncGen)
 
+set(LLVM_TARGET_DEFINITIONS OpBase.td)
+mlir_tablegen(OpBase.h.inc -gen-op-interface-decls)
+mlir_tablegen(OpBase.cpp.inc -gen-op-interface-defs)
+add_mlir_generic_tablegen_target(MLIROpBaseIncGen)
+
 add_mlir_doc(BuiltinAttributes BuiltinAttributes Dialects/ -gen-attrdef-doc)
 add_mlir_doc(BuiltinLocationAttributes BuiltinLocationAttributes Dialects/ -gen-attrdef-doc)
 add_mlir_doc(BuiltinOps BuiltinOps Dialects/ -gen-op-doc)

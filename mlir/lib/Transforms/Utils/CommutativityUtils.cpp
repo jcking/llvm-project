@@ -281,7 +281,7 @@ public:
         };
 
     // If `op` is not commutative, do nothing.
-    if (!op->hasTrait<OpTrait::IsCommutative>())
+    if (!mlir::isCommutative(op))
       return failure();
 
     // Populate the list of commutative operands.
