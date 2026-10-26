@@ -1434,3 +1434,5 @@ void impl::ensureRegionTerminator(
   OpBuilder opBuilder(builder.getContext());
   ensureRegionTerminator(region, opBuilder, loc, buildTerminatorOp);
 }
+
+#include "mlir/IR/OpTraitInterfaces.cpp.inc"

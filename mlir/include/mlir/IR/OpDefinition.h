@@ -2225,4 +2225,62 @@ struct DenseMapInfo<T,
 
 MLIR_DECLARE_EXPLICIT_TYPE_ID(mlir::EmptyProperties)
 
+#include "mlir/IR/OpTraitInterfaces.h.inc"
+
+namespace mlir {
+
+namespace OpTrait {
+
+[[nodiscard]]
+inline bool isCommutative(Operation *op) {
+  if (op->hasTrait<IsCommutative>()) {
+    return true;
+  }
+  if (ConditionallyCommutativeOpInterface iface = dyn_cast<ConditionallyCommutativeOpInterface>(op)) {
+    return iface.isCommutative();
+  }
+  return false;
+}
+
+inline LogicalResult foldCommutative(Operation *op, ArrayRef<Attribute> operands, SmallVectorImpl<OpFoldResult> &results) {
+  assert(OpTrait::isCommutative(op));
+  return impl::foldCommutative(op, operands, results);
+}
+
+[[nodiscard]]
+inline bool isInvolution(Operation *op) {
+  if (op->hasTrait<IsInvolution>()) {
+    return true;
+  }
+  if (ConditionallyInvolutionOpInterface iface = dyn_cast<ConditionallyInvolutionOpInterface>(op)) {
+    return iface.isInvolution();
+  }
+  return false;
+}
+
+inline OpFoldResult foldInvolution(Operation *op, ArrayRef<Attribute>) {
+  assert(OpTrait::isInvolution(op));
+  return impl::foldInvolution(op);
+}
+
+[[nodiscard]]
+inline bool isIdempotent(Operation *op) {
+  if (op->hasTrait<IsIdempotent>()) {
+    return true;
+  }
+  if (ConditionallyIdempotentOpInterface iface = dyn_cast<ConditionallyIdempotentOpInterface>(op)) {
+    return iface.isIdempotent();
+  }
+  return false;
+}
+
+inline OpFoldResult foldIdempotent(Operation *op, ArrayRef<Attribute>) {
+  assert(OpTrait::isIdempotent(op));
+  return impl::foldIdempotent(op);
+}
+
+} // namespace OpTrait
+
+} // namespace mlir
+
 #endif
